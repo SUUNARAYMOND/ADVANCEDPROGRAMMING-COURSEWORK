@@ -3,7 +3,7 @@ from domain.events import BookingConfirmed
 
 
 class Booking:
-    """Booking aggregate root, responsible for BR2 lifecycle transitions."""
+    """BR2: only pending bookings can be confirmed or cancelled."""
 
     def __init__(self, booking_id, room_id, guest_name, dates, total_price):
         self.booking_id = booking_id
@@ -19,17 +19,13 @@ class Booking:
 
     def confirm(self):
         if self.status != BookingStatus.PENDING:
-            raise ValueError(
-                f"Cannot confirm a booking with status '{self.status.value}'"
-            )
+            raise ValueError(f"Cannot confirm a booking with status '{self.status.value}'")
 
         self._status = BookingStatus.CONFIRMED
         return BookingConfirmed(self.booking_id, self.room_id, self.dates)
 
     def cancel(self):
         if self.status != BookingStatus.PENDING:
-            raise ValueError(
-                f"Cannot cancel a booking with status '{self.status.value}'"
-            )
+            raise ValueError(f"Cannot cancel a booking with status '{self.status.value}'")
 
         self._status = BookingStatus.CANCELLED
