@@ -1,8 +1,5 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from domain.booking_dates import BookingDates
+from domain.booking_dates import BookingDates
 
 
 @dataclass(frozen=True)
@@ -11,4 +8,4 @@ class BookingConfirmed:
 
     booking_id: str
     room_id: str
-    dates: "BookingDates"
+    dates: BookingDates

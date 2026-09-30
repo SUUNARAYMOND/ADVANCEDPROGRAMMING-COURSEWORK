@@ -6,14 +6,14 @@ from domain.booking_dates import BookingDates
 
 @dataclass(frozen=True)
 class Reservation:
-    """A room-owned reservation record referring to a separate Booking by ID."""
+    """An immutable record belonging to Room, referencing Booking by ID."""
 
     booking_id: str
     dates: BookingDates
 
 
 class Room:
-    """Aggregate root protecting BR3: its reservations must never overlap."""
+    """BR3: a room cannot accept overlapping reservations."""
 
     def __init__(self, room_id, room_number, room_type, nightly_price):
         self.room_id = room_id
@@ -28,8 +28,9 @@ class Room:
         return tuple(self._reservations)
 
     def reserve(self, booking_id: str, dates: BookingDates) -> Reservation:
-        if any(dates.overlaps(existing.dates) for existing in self._reservations):
-            raise ValueError("Room already has an overlapping reservation")
+        for reservation in self._reservations:
+            if dates.overlaps(reservation.dates):
+                raise ValueError("Room already has an overlapping reservation")
 
         reservation = Reservation(booking_id, dates)
         self._reservations.append(reservation)

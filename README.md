@@ -87,7 +87,9 @@ parameterization multiplying the coursework's intended eight tests.
 
 The application, infrastructure, interface and T5-T8 remain placeholders.
 The event handler and complete workflow have not been implemented or tested.
-`evidence/member2-tests.txt` contains the actual T1-T4 run. This is not yet
+`evidence/member2-tests.txt` contains the original T1-T4 run, and
+`evidence/member2-simplified-tests.txt` contains the passing run after
+simplification. The original TDD evidence is preserved. This is not yet
 a complete eight-test coursework submission.
 
 For Member 2's TDD example, T1 was run against an immutable BookingDates

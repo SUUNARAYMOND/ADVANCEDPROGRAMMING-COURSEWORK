@@ -4,11 +4,7 @@ from datetime import date
 
 @dataclass(frozen=True)
 class BookingDates:
-    """BR1: a valid, immutable stay, with no separate identity.
-
-    Check-in is inclusive and check-out exclusive, so adjacent stays do not
-    overlap. Equality compares dates rather than an identifier.
-    """
+    """BR1: immutable dates with checkout later than check-in."""
 
     check_in: date
     check_out: date
@@ -22,4 +18,5 @@ class BookingDates:
         return (self.check_out - self.check_in).days
 
     def overlaps(self, other: "BookingDates") -> bool:
+        # Checkout day can be another guest's check-in day.
         return self.check_in < other.check_out and other.check_in < self.check_out
