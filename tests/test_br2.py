@@ -1,14 +1,12 @@
 import pytest
 from datetime import date
-from types import SimpleNamespace
 
 from domain.booking import Booking
+from domain.booking_dates import BookingDates
 
 
 def test_T2_booking_allows_only_pending_to_confirmed_or_cancelled():
-    # Member 2's BookingDates is not implemented yet. This stand-in supplies
-    # its agreed date fields; validation belongs to BookingDates, not Booking.
-    dates = SimpleNamespace(
+    dates = BookingDates(
         check_in=date(2026, 10, 1),
         check_out=date(2026, 10, 3),
     )
