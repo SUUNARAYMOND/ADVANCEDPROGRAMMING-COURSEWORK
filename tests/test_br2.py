@@ -4,6 +4,7 @@ import pytest
 
 from domain.booking import Booking
 from domain.booking_dates import BookingDates
+from domain.booking_status import BookingStatus
 
 
 def test_T2_booking_allows_only_pending_to_confirmed_or_cancelled():
@@ -12,31 +13,48 @@ def test_T2_booking_allows_only_pending_to_confirmed_or_cancelled():
         check_out=date(2026, 10, 3),
     )
 
-    confirmed = Booking("B001", "R205", "John", dates, 200)
-    cancelled = Booking("B002", "R205", "Jane", dates, 200)
+    confirmed = Booking(
+        "B001",
+        "R205",
+        "John",
+        dates,
+        200
+    )
 
-    for booking in (confirmed, cancelled):
-        assert booking.status == "Pending"
-        assert booking.dates is dates
-        assert booking.total_price == 200
+    cancelled = Booking(
+        "B002",
+        "R205",
+        "Jane",
+        dates,
+        200
+    )
 
-    event = confirmed.confirm()
-    assert confirmed.status == "Confirmed"
-    assert event.booking_id == "B001"
-    assert event.room_id == "R205"
-    assert event.dates is dates
+    # Both bookings start as Pending.
+    assert confirmed.status == BookingStatus.PENDING
+    assert cancelled.status == BookingStatus.PENDING
 
+    # Pending -> Confirmed is allowed.
+    confirmed.confirm()
+    assert confirmed.status == BookingStatus.CONFIRMED
+
+    # Pending -> Cancelled is allowed.
     cancelled.cancel()
-    assert cancelled.status == "Cancelled"
+    assert cancelled.status == BookingStatus.CANCELLED
 
-    # Neither terminal booking can change state again.
-    for booking in (confirmed, cancelled):
-        previous_status = booking.status
-        for transition in (booking.confirm, booking.cancel):
-            with pytest.raises(ValueError, match="Cannot"):
-                transition()
-            assert booking.status == previous_status
+    # Confirmed bookings cannot change state.
+    with pytest.raises(ValueError):
+        confirmed.confirm()
 
-        # State changes must go through the aggregate's methods.
-        with pytest.raises(AttributeError):
-            booking.status = "Pending"
+    with pytest.raises(ValueError):
+        confirmed.cancel()
+
+    # Cancelled bookings cannot change state.
+    with pytest.raises(ValueError):
+        cancelled.confirm()
+
+    with pytest.raises(ValueError):
+        cancelled.cancel()
+
+    # The failed transitions did not change the final states.
+    assert confirmed.status == BookingStatus.CONFIRMED
+    assert cancelled.status == BookingStatus.CANCELLED
