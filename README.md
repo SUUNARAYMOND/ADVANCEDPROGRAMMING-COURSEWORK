@@ -1,126 +1,126 @@
 # Hotel Room Booking Coursework
 
-Small Python implementation of DDD, TDD and Clean Architecture using
-in-memory persistence. The project is under development by four members.
+A small four-member DDD, TDD and Clean Architecture project. Two connected
+use cases confirm a booking and process its requested room reservation.
+Persistence is in memory. Payments, authentication, a web interface,
+production databases and deployment are outside the scope.
 
-## Run the tests
+## Run
 
 ```powershell
 py -m pip install -r requirements.txt
-py -m pytest -q
+py -m pytest -v
+py -m interface.main
 ```
 
-On systems with Python available as `python`, substitute `python` for `py`.
+Use `python` instead of `py` where appropriate. The console demonstrates a
+successful booking followed by rejection of an overlapping booking.
 
-## Member 1: Booking aggregate
+## Six business rules
 
-`Booking(booking_id, room_id, guest_name, dates, total_price)` stores the
-booking data. Supply validated `BookingDates` from Member 2 and the price
-calculated by `BookingPricingService`. Booking does not validate dates,
-calculate prices, look up rooms or reserve them.
+| Rule | Statement | Responsible code | Violation outcome | Test |
+| --- | --- | --- | --- | --- |
+| BR1 | Checkout must be after check-in. | `domain/booking_dates.py`: BookingDates | ValueError; application returns failure. | T1 |
+| BR2 | Only Pending bookings can become Confirmed or Cancelled. | `domain/booking.py`: Booking | ValueError; existing state is preserved. | T2 |
+| BR3 | A Room cannot accept overlapping reservations. | `domain/room.py`: Room.reserve | ValueError; existing reservations are preserved. | T3 |
+| BR4 | Total price is the nightly rate multiplied by nights. | `domain/booking_pricing_service.py`: BookingPricingService | Invalid rates or nights raise ValueError; application returns failure. | T4 |
+| BR5 | Confirming Booking requests a reservation in Room through an event. | `domain/events.py`: BookingConfirmed; `infrastructure/event_handler.py`: RoomReservationHandler | Handler reports rejection; Room stays unchanged and attempted Booking is not saved. | T5 |
+| BR6 | The requested Room must exist before booking proceeds. | `application/booking_service.py`: BookingService; RoomRepository | Failure DTO; no booking or event handling. | T6 |
 
-`BookingStatus` defines `PENDING`, `CONFIRMED` and `CANCELLED`, with values
-`Pending`, `Confirmed` and `Cancelled`. Use `booking.status.value` for display.
-The status property is read-only; transitions use the aggregate methods:
+## Domain model and contracts
 
-- `confirm()` allows only Pending -> Confirmed and returns one immutable
-  `BookingConfirmed(booking_id, room_id, dates)` event.
-- `cancel()` allows only Pending -> Cancelled.
-- Either method raises `ValueError` for a terminal booking and preserves its
-  existing status. A rejected confirmation returns no event.
+Booking and Room are the two aggregate roots, identified by `booking_id`
+and `room_id`. Booking protects its lifecycle. Room owns immutable Reservation
+records, references Booking only by ID, and protects its non-overlap invariant.
+Callers inspect `room.reservations` through a read-only tuple.
 
-Member 3's application service must capture the event returned by `confirm()`
-and pass it to Member 4's in-process handler. The handler retrieves the Room
-and calls the agreed `Room.reserve(booking_id, dates)` method. Member 2 and
-Member 4 must use this same reservation signature. Booking never modifies Room.
-The event contract is defined; its handler is still to be implemented.
+`BookingDates(check_in, check_out)` is an immutable value object taking
+`datetime.date` values. Equal date pairs are equal values with no separate
+identity. `dates.nights` returns the stay length. Checkout is exclusive:
+October 1-4 and October 4-6 are adjacent, not overlapping.
 
-T2 now uses Member 2's real `BookingDates` value object.
+`Room(room_id, room_number, room_type, nightly_price)` accepts reservations
+through `reserve(booking_id, dates)`. Stored records are active reservations;
+reservation cancellation is outside the current workflow.
 
-## Member 2: Room and domain logic
+`BookingPricingService.calculate_price(room_price, nights)` combines the
+room's rate and the stay's nights, returning Decimal money. Rates must be
+finite and non-negative; nights must be positive integers. Zero rates are
+allowed. Taxes, discounts and currency conversion are outside scope.
 
-- BR1: `BookingDates(check_in, check_out)` takes `datetime.date` values and
-  rejects checkout on or before check-in with `ValueError`. It is immutable
-  and compares by its values; it has no separate identity. `dates.nights`
-  gives the stay length. One night is the minimum valid stay.
-- BR3: `Room(room_id, room_number, room_type, nightly_price)` is the second
-  aggregate root. `room.reserve(booking_id, dates)` rejects overlapping
-  reservations with `ValueError`, leaving all existing reservations unchanged.
-  Check-in is inclusive and checkout exclusive: October 1-4 and October 4-6
-  do not conflict. Overlap is `new_start < existing_end` and
-  `existing_start < new_end`.
-- Room owns immutable `Reservation(booking_id, dates)` records. They reference
-  Booking by ID and do not hold or modify the Booking aggregate. Inspect them
-  through the read-only tuple `room.reservations`; only Room adds records.
-  All stored records are active reservations; reservation cancellation is
-  outside the current scope.
-- BR4: `BookingPricingService.calculate_price(room_price, nights)` returns a
-  `Decimal` total: nightly price multiplied by nights. It combines information
-  from Room and BookingDates without changing either. Negative, non-finite or
-  non-numeric rates and non-positive/non-integer nights raise `ValueError`.
-  A zero rate is allowed; no currency conversion, taxes or discounts are added.
+`Booking(booking_id, room_id, guest_name, dates, total_price)` starts Pending.
+`confirm()` returns `BookingConfirmed(booking_id, room_id, dates)`;
+`cancel()` changes only a Pending booking. Display status with
+`booking.status.value`. Booking never retrieves or directly changes Room.
 
-Member 3 should create `BookingDates` from DTO dates, retrieve Room, calculate
-the price using `room.nightly_price` and `dates.nights`, then pass dates and
-total price to Booking. Member 4's handler should retrieve Room using the
-event's room ID and call `room.reserve(event.booking_id, event.dates)`.
-Overlap enforcement stays in Room. The handler/application must report its
-rejection rather than editing reservations directly.
+No Factory is needed because creation uses simple constructors. A Layer
+Supertype is a common base class for shared behaviour within a layer; none
+is used because this domain has no such shared behaviour to extract.
+The repository ABCs define persistence contracts, not a shared domain base.
 
-No Factory is needed: ordinary constructors are sufficient for this small
-model. No Layer Supertype is used: there is no shared domain behaviour that
-justifies a common base class. Domain components import only the standard
-library and other domain components.
+## Architecture and event flow
 
-## Current tests and evidence
+Domain contains the business objects and rules. Application contains
+BookingService, MakeBookingRequest/MakeBookingResult DTOs, one repository
+abstraction per root and the handler contract. Infrastructure implements
+the repositories and event handler. Interface wires them together through
+`build_service()` and calls the use case. Repositories expose `get(id)` and
+`save(entity)` and store aggregates in dictionaries keyed by identity.
 
-| Test | Behaviour |
+Arrows below mean source-code imports:
+
+```mermaid
+graph LR
+    Interface --> Application
+    Interface --> Infrastructure
+    Interface --> Domain
+    Infrastructure --> Application
+    Infrastructure --> Domain
+    Application --> Domain
+```
+
+The use-case flow is:
+
+`MakeBookingRequest -> BookingService -> Booking.confirm -> BookingConfirmed -> RoomReservationHandler -> Room.reserve -> MakeBookingResult`
+
+BookingService retrieves Room (BR6), builds dates (BR1), calculates price
+(BR4), creates and confirms Booking (BR2), and passes the returned event to
+the injected handler (BR5). Room then checks its own overlap invariant (BR3).
+
+On success the handler saves Room, the service saves Booking and returns
+success. On reservation rejection Room remains unchanged, the attempted
+Booking is not saved and the returned DTO reports failure. Its transient
+Booking object was confirmed, but is discarded rather than cancelled;
+there is no Confirmed-to-Cancelled transition. This is a small synchronous,
+in-memory workflow, without a production rollback or transaction mechanism.
+
+## Eight tests and evidence
+
+| Test | Checks |
 | --- | --- |
-| T1 / BR1 | Reject equal/reversed dates; accept a one-night stay; value equality and immutability. |
-| T2 / BR2 | Valid state changes; reject changes from terminal states; confirmation event data. |
-| T3 / BR3 | Reject five overlap shapes without mutation; accept adjacent stays; protect reservation records. |
-| T4 / BR4 | Exact rate-times-nights calculation; reject invalid calculation inputs. |
+| T1 | Reject equal/reversed dates; accept the one-night boundary; value equality and immutability. |
+| T2 | Permit Pending transitions and reject transitions from terminal states. |
+| T3 | Reject overlap shapes without mutation; accept adjacent stays; protect reservation records. |
+| T4 | Calculate exact money from rate and nights; reject invalid inputs. |
+| T5 | Real Booking confirmation produces the event; real handler requests Room reservation. |
+| T6 | Missing Room stops the use case before event handling or persistence. |
+| T7 | Successful main use case stores Booking and changes Room through the event. |
+| T8 | Real overlapping follow-up fails; existing reservations remain and attempted Booking is absent. |
 
-T1 and T3 provide rejection cases, and T1 covers the equal-date and one-night
-boundaries. There is one test function per implemented identifier, without
-parameterization multiplying the coursework's intended eight tests.
+T1, T2 and T3 include rejection cases; T1 also provides a boundary case.
+`evidence/final-tests.txt` contains the final eight-test run and
+`evidence/final-console.txt` contains the console walkthrough output.
 
-The application, infrastructure, interface and T5-T8 remain placeholders.
-The event handler and complete workflow have not been implemented or tested.
-`evidence/member2-tests.txt` contains the original T1-T4 run, and
-`evidence/member2-simplified-tests.txt` contains the passing run after
-simplification. The original TDD evidence is preserved. This is not yet
-a complete eight-test coursework submission.
+For Slide 12, use BR1's actual TDD evidence: `evidence/member2-red.txt`
+shows T1 failing against BookingDates without validation;
+`evidence/member2-green.txt` shows the same test passing after implementing
+the rule. Original member evidence is retained as historical evidence.
+Member 1's red/green files document the later Booking contract patch, not
+the original implementation of BR2.
 
-For Member 2's TDD example, T1 was run against an immutable BookingDates
-dataclass that had no validation. It failed because equal dates were accepted.
-Adding BR1 validation and the nights property made that same test pass:
+The required 15-slide deck remains a separate submission deliverable.
+Use the rules, architecture, event flow and traceability above consistently
+with the final code and tests.
 
-- `evidence/member2-red.txt`: `py -m pytest tests/test_br1.py -q` before BR1 implementation.
-- `evidence/member2-green.txt`: the same command after BR1 implementation.
-
-These are actual outputs suitable for the BR1 TDD example on Slide 12.
-
-## TDD evidence for the Member 1 patch
-
-The strengthened T2 was written and run before the patch. It failed because
-Booking did not accept dates. After adding the required booking fields,
-status enum and confirmation event, the same test passed.
-
-- `evidence/member1-red.txt`: actual failing output from
-  `py -m pytest tests/test_br2.py -q` before implementation.
-- `evidence/member1-green.txt`: actual passing output from
-  `py -m pytest -q` after implementation.
-
-These files document this patch's cycle, not the original development of BR2.
-
-## Integration decision still required
-
-For T8, the team must agree on Booking's final state when Room rejects a
-reservation. Under the current BR2 contract, a confirmed booking cannot be
-cancelled. Room must preserve its existing reservations and the application
-must report the failed follow-up. No rollback policy is implemented yet.
-
-AI use: OpenAI Codex reviewed and patched the Booking aggregate, shared event
-contract and dependency setup, and helped implement Member 2's domain
-components, T1-T4, TDD evidence and documentation.
+AI use: OpenAI Codex helped review and implement domain components, tests,
+TDD evidence, documentation and feature-branch integration.

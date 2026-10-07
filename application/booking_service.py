@@ -51,8 +51,7 @@ class BookingService:
 
         outcome = self._confirmed_handler.handle(event)  # BR5 -> Room (BR3)
         if not outcome.accepted:
-            # Open team decision (see README): the booking is not stored when
-            # the Room refuses, so no confirmed booking exists without a room.
+            # Do not store the attempted Booking when Room rejects reservation.
             return MakeBookingResult(
                 False, f"Room rejected the reservation: {outcome.reason}"
             )
